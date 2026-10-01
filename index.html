@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Caja Diaria">
+<meta name="theme-color" content="#2f7d5b"><link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" href="icon-192.png"><link rel="icon" href="icon-192.png">
+<title>Caja Diaria</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+:root{--bg:#f6f4ef;--card:#fff;--tx:#1f2a24;--mut:#6b756f;--ln:#e4e0d6;--ok:#2f7d5b;--bad:#c4513f;--acc:#2f7d5b;--hl:#fff4d6;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141a17;--card:#1e2723;--tx:#e9efe9;--mut:#9aa69f;--ln:#2f3a35;--ok:#5bc296;--bad:#ef8a78;--acc:#3f9c76;--hl:#3a3320}}
+:root[data-theme="dark"]{--bg:#141a17;--card:#1e2723;--tx:#e9efe9;--mut:#9aa69f;--ln:#2f3a35;--ok:#5bc296;--bad:#ef8a78;--acc:#3f9c76;--hl:#3a3320}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:520px;margin:0 auto;padding:14px 14px 90px}
+h1{font-size:20px;margin:4px 0 12px;display:flex;justify-content:space-between;align-items:center}
+.clock{font-size:14px;color:var(--mut);font-weight:400}
+.card{background:var(--card);border:1px solid var(--ln);border-radius:16px;padding:14px;margin-bottom:12px}
+.row{display:flex;gap:8px;align-items:center}.row>*{flex:1;min-width:0}
+input,button{font:inherit;color:inherit}
+input[type=text],input[type=number],input[type=date],input[type=time],input[type=month],input[inputmode]{width:100%;padding:12px;border:1px solid var(--ln);border-radius:12px;background:var(--bg)}
+button{border:0;border-radius:12px;padding:12px 14px;background:var(--acc);color:#fff;font-weight:600;cursor:pointer}
+button.ghost{background:transparent;color:var(--acc);border:1px solid var(--ln)}
+button.x{background:transparent;color:var(--mut);padding:4px 8px;flex:0}
+.seg{display:flex;gap:6px;margin-bottom:10px}.seg button{flex:1;background:var(--bg);color:var(--tx);border:1px solid var(--ln)}
+.seg button.on.i{background:var(--ok);color:#fff;border-color:var(--ok)}.seg button.on.e{background:var(--bad);color:#fff;border-color:var(--bad)}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px}.stat{background:var(--bg);border-radius:12px;padding:10px}
+.stat small{color:var(--mut);display:block}.stat b{font-size:19px}.stat.full{grid-column:1/-1;text-align:center}.stat.full b{font-size:28px}
+.pos{color:var(--ok)}.neg{color:var(--bad)}
+.item{display:flex;gap:8px;align-items:center;padding:9px 0;border-bottom:1px solid var(--ln)}.item:last-child{border:0}
+.item .d{flex:1;min-width:0}.item small{color:var(--mut);display:block}
+.banner{background:var(--hl);border:1px solid var(--ln);border-radius:16px;padding:14px;margin-bottom:12px}
+.banner h3{margin:0 0 6px;font-size:16px}
+h2{font-size:15px;margin:0 0 6px;color:var(--mut);font-weight:600}
+nav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--ln);display:flex;padding-bottom:env(safe-area-inset-bottom,0px)}
+nav button{flex:1;background:transparent;color:var(--mut);border-radius:0;padding:14px 4px}nav button.on{color:var(--acc)}
+.tbl{width:100%;border-collapse:collapse;font-size:15px}.tbl td{padding:8px 4px;border-bottom:1px solid var(--ln)}.tbl td:last-child,.tbl td:nth-child(2),.tbl td:nth-child(3){text-align:right}
+.tag{font-size:12px;background:var(--bg);border-radius:8px;padding:2px 6px;color:var(--mut)}
+label.chk{display:flex;gap:10px;align-items:center;padding:6px 0}label.chk input{width:22px;height:22px}
+.foot{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:8px}.foot button{font-size:14px}
+.empty{color:var(--mut);padding:8px 0}
+</style></head>
+<body><main id="app"></main>
+<nav><button data-t="hoy">Hoy</button><button data-t="sem">Semana</button><button data-t="mes">Mes</button></nav>
+<script>
+const $=s=>document.querySelector(s);
+let S={days:{}};
+try{S=JSON.parse(localStorage.getItem('caja')||'{"days":{}}')}catch(e){}
+let col=null,sync='Guardado en este teléfono',first=true;
+function saveDay(k){try{localStorage.setItem('caja',JSON.stringify(S))}catch(e){}
+  if(col){const d=ensure(k);col.doc(k).set({inc:d.inc,exp:d.exp,worked:!!d.worked}).catch(()=>{sync='⚠️ Error al guardar en la nube';tick()})}}
+const pad=n=>String(n).padStart(2,'0');
+const iso=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const parse=s=>{const[y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)};
+const money=n=>'$ '+Number(n).toLocaleString('es-AR',{maximumFractionDigits:2});
+const get=k=>S.days[k]||{inc:[],exp:[],worked:false};
+const sum=a=>a.reduce((t,x)=>t+x.amt,0);
+const tot=k=>{const d=get(k);return{i:sum(d.inc),e:sum(d.exp)}};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const nowT=()=>{const n=new Date();return pad(n.getHours())+':'+pad(n.getMinutes())};
+const cls=n=>n<0?'neg':'pos';
+const longD=d=>d.toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+const shortD=d=>d.toLocaleDateString('es-AR',{weekday:'short',day:'numeric'});
+const monthName=d=>d.toLocaleDateString('es-AR',{month:'long',year:'numeric'});
+let tab='hoy',sel=iso(new Date()),mon=sel.slice(0,7),type='i',dl=true,lastClosing=null;
+const todayKey=()=>iso(new Date());
+const isClosing=()=>new Date().getHours()>=21;
+
+function weekKeys(k){const d=parse(k);const off=(d.getDay()+6)%7;const m=new Date(d.getFullYear(),d.getMonth(),d.getDate()-off);
+  return[...Array(7)].map((_,i)=>iso(new Date(m.getFullYear(),m.getMonth(),m.getDate()+i)))}
+function monthKeys(m){const[y,mo]=m.split('-').map(Number);const n=new Date(y,mo,0).getDate();return[...Array(n)].map((_,i)=>y+'-'+pad(mo)+'-'+pad(i+1))}
+function range(keys){return keys.reduce((a,k)=>{const t=tot(k);a.i+=t.i;a.e+=t.e;return a},{i:0,e:0})}
+const stats=(t,lbl)=>`<div class="stats"><div class="stat"><small>Ingresos</small><b class="pos">${money(t.i)}</b></div><div class="stat"><small>Gastos</small><b class="neg">${money(t.e)}</b></div><div class="stat full"><small>${lbl}</small><b class="${cls(t.i-t.e)}">${money(t.i-t.e)}</b></div></div>`;
+const pdfBtn=a=>dl?`<button class="ghost" onclick="${a}">Descargar PDF</button>`:'';
+
+function listHTML(arr,kind){
+  if(!arr.length)return'<div class="empty">Sin registros todavía.</div>';
+  return[...arr].sort((a,b)=>a.time<b.time?-1:1).map(x=>`<div class="item"><div class="d">${esc(x.desc||(kind==='inc'?'Ingreso':'Gasto'))}<small>${x.time}</small></div><b class="${kind==='inc'?'pos':'neg'}">${money(x.amt)}</b><button class="x" onclick="del('${kind}',${x.id})" aria-label="Borrar">✕</button></div>`).join('')}
+
+function viewHoy(){
+  const d=parse(sel),k=sel,day=get(k),t=tot(k),isT=k===todayKey(),closing=isT&&isClosing();
+  let h=`<div class="card"><div class="row"><input type="date" id="dt" value="${k}"><button class="ghost" onclick="setDate('${todayKey()}')">Hoy</button></div>
+  <h2 style="margin-top:10px;text-transform:capitalize">${longD(d)}</h2>`;
+  if(d.getDay()===0)h+=`<label class="chk"><input type="checkbox" id="wk" ${day.worked?'checked':''}> Este domingo se trabajó</label>`;
+  h+='</div>';
+  if(closing)h+=`<div class="banner"><h3>🌙 Cierre del día · 21:00</h3>${stats(t,'Quedó en caja')}</div>`;
+  h+=`<div class="card"><div class="seg"><button class="i ${type==='i'?'on':''}" onclick="setType('i')">+ Ingreso</button><button class="e ${type==='e'?'on':''}" onclick="setType('e')">− Gasto</button></div>
+  <div class="row" style="margin-bottom:8px"><input inputmode="decimal" id="amt" placeholder="Monto"><input type="time" id="tm" value="${nowT()}"></div>
+  <input type="text" id="ds" placeholder="${type==='i'?'Detalle del ingreso (opcional)':'¿En qué se gastó? (ej. pan, boleto)'}" style="margin-bottom:8px">
+  <button style="width:100%" onclick="add()">Agregar ${type==='i'?'ingreso':'gasto'}</button></div>`;
+  if(!closing)h+=`<div class="card"><h2>Caja del día</h2>${stats(t,'En caja')}</div>`;
+  h+=`<div class="card"><h2>Ingresos</h2>${listHTML(day.inc,'inc')}</div><div class="card"><h2>Gastos</h2>${listHTML(day.exp,'exp')}</div>`;
+  if(!closing)h+=`<div class="foot"><button class="ghost" onclick="forceClose()">Ver cierre del día</button>${pdfBtn('pdfDay()')}</div>`;
+  else h+=`<div class="foot">${pdfBtn('pdfDay()')}</div>`;
+  return h+foot()}
+
+function viewSem(){
+  const ks=weekKeys(sel),sat=ks.slice(0,6),sun=ks[6],tS=range(sat),tD=tot(sun),all=range(ks);
+  const n=new Date(),inWeek=ks.includes(todayKey()),close=inWeek&&((n.getDay()===6&&isClosing())||n.getDay()===0);
+  let h=`<div class="card"><div class="row"><button class="ghost" onclick="shiftWeek(-7)">‹ Anterior</button><b style="text-align:center">${shortD(parse(ks[0]))} – ${shortD(parse(sun))}</b><button class="ghost" onclick="shiftWeek(7)">Siguiente ›</button></div></div>`;
+  if(close)h+=`<div class="banner"><h3>📅 Cierre de la semana · sábado</h3>${stats(tS,'Total de lunes a sábado')}</div>`;
+  h+=`<div class="card"><h2>Detalle por día</h2><table class="tbl">`+ks.map(k=>{const t=tot(k),d=parse(k),w=d.getDay()===0;
+    return`<tr><td style="text-transform:capitalize">${shortD(d)}${w&&get(k).worked?' <span class="tag">trabajado</span>':''}</td><td class="pos">${money(t.i)}</td><td class="neg">${money(t.e)}</td><td><b class="${cls(t.i-t.e)}">${money(t.i-t.e)}</b></td></tr>`}).join('')+`</table></div>`;
+  if(!close)h+=`<div class="card"><h2>Total lunes a sábado</h2>${stats(tS,'En caja')}</div>`;
+  h+=`<div class="card"><h2>Domingo (extra)</h2>${stats(tD,'En caja del domingo')}</div><div class="card"><h2>Total de la semana completa</h2>${stats(all,'En caja')}</div><div class="foot">${pdfBtn('pdfWeek()')}</div>`;
+  return h+foot()}
+
+function viewMes(){
+  const ks=monthKeys(mon),t=range(ks),last=ks[ks.length-1],close=todayKey()===last;
+  let h=`<div class="card"><input type="month" id="mn" value="${mon}"></div>`;
+  if(close)h+=`<div class="banner"><h3>🗓️ Cierre del mes</h3>${stats(t,'Total del mes en caja')}</div>`;
+  else h+=`<div class="card"><h2 style="text-transform:capitalize">${monthName(parse(mon+'-01'))}</h2>${stats(t,'Total del mes en caja')}</div>`;
+  const used=ks.filter(k=>tot(k).i||tot(k).e);
+  h+=`<div class="card"><h2>Días con movimientos</h2>${used.length?'<table class="tbl">'+used.map(k=>{const x=tot(k);return`<tr><td style="text-transform:capitalize">${shortD(parse(k))}</td><td class="pos">${money(x.i)}</td><td class="neg">${money(x.e)}</td><td><b class="${cls(x.i-x.e)}">${money(x.i-x.e)}</b></td></tr>`}).join('')+'</table>':'<div class="empty">Sin movimientos este mes.</div>'}</div><div class="foot">${pdfBtn('pdfMonth()')}</div>`;
+  return h+foot()}
+
+function foot(){return`<div class="foot">${dl?'<button class="ghost" onclick="backup()">Guardar respaldo</button>':''}<button class="ghost" onclick="$(\'#imp\').click()">Restaurar respaldo</button><input type="file" id="imp" accept=".json" hidden></div>`}
+
+function render(){
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===tab));
+  $('#app').innerHTML=`<h1>Caja Diaria <span class="clock" id="clk"></span></h1>`+(tab==='hoy'?viewHoy():tab==='sem'?viewSem():viewMes());
+  bind();tick()}
+function bind(){
+  const dt=$('#dt');if(dt)dt.onchange=e=>{if(e.target.value)setDate(e.target.value)};
+  const wk=$('#wk');if(wk)wk.onchange=e=>{ensure(sel).worked=e.target.checked;saveDay(sel)};
+  const mn=$('#mn');if(mn)mn.onchange=e=>{if(e.target.value){mon=e.target.value;render()}};
+  const im=$('#imp');if(im)im.onchange=restore}
+function tick(){const c=$('#clk');if(c){const n=new Date();c.textContent=n.toLocaleDateString('es-AR',{day:'numeric',month:'short'})+' · '+nowT()+' · '+sync}
+  const cl=isClosing();if(lastClosing!==null&&cl!==lastClosing)render();lastClosing=cl}
+const ensure=k=>S.days[k]||(S.days[k]={inc:[],exp:[],worked:false});
+function setDate(k){sel=k;mon=k.slice(0,7);render()}
+function setType(t){type=t;const a=$('#amt')?.value,d=$('#ds')?.value;render();if(a)$('#amt').value=a;if(d)$('#ds').value=d}
+function shiftWeek(n){const d=parse(sel);setDate(iso(new Date(d.getFullYear(),d.getMonth(),d.getDate()+n)))}
+function add(){
+  const amt=parseFloat(String($('#amt').value).replace(',','.'));
+  if(!(amt>0)){$('#amt').focus();return}
+  const d=ensure(sel),item={id:Date.now(),desc:$('#ds').value.trim(),amt,time:$('#tm').value||nowT()};
+  (type==='i'?d.inc:d.exp).push(item);saveDay(sel);render()}
+function del(kind,id){const d=ensure(sel);d[kind]=d[kind].filter(x=>x.id!==id);saveDay(sel);render()}
+function forceClose(){const t=tot(sel);const b=document.createElement('div');b.className='banner';b.innerHTML=`<h3>Resumen del día</h3>${stats(t,'En caja')}`;$('#app').children[1].after(b);b.scrollIntoView({behavior:'smooth'})}
+
+async function makePdf(title,lines){
+  try{const{jsPDF}=window.jspdf,p=new jsPDF();let y=20;p.setFontSize(16);p.text(title,14,y);y+=10;p.setFontSize(11);
+    lines.forEach(l=>{const b=typeof l!=='string';const s=b?l.b:l;if(y>282){p.addPage();y=20}p.setFont('helvetica',b?'bold':'normal');p.text(s,14,y);y+=b?8:6});
+    p.save(title.replace(/[^\w\-]+/g,'-').toLowerCase()+'.pdf')}catch(e){if(!e||e.code!=='declined')alert('No se pudo generar el PDF.')}}
+const pl=(l,t)=>l+':  Ingresos '+money(t.i)+'  |  Gastos '+money(t.e)+'  |  En caja '+money(t.i-t.e);
+function pdfDay(){const d=get(sel),t=tot(sel),L=[{b:'Ingresos'}];
+  d.inc.length?d.inc.forEach(x=>L.push(x.time+'  '+(x.desc||'Ingreso')+'  '+money(x.amt))):L.push('Sin ingresos');
+  L.push({b:'Gastos'});d.exp.length?d.exp.forEach(x=>L.push(x.time+'  '+(x.desc||'Gasto')+'  '+money(x.amt))):L.push('Sin gastos');
+  L.push('',{b:'Total ingresos: '+money(t.i)},{b:'Total gastos: '+money(t.e)},{b:'En caja: '+money(t.i-t.e)});
+  makePdf('Caja del '+sel,L)}
+function pdfWeek(){const ks=weekKeys(sel),L=ks.map(k=>pl(shortD(parse(k)),tot(k)));
+  L.push('',{b:pl('Total lunes a sabado',range(ks.slice(0,6)))},{b:pl('Domingo',tot(ks[6]))},{b:pl('Semana completa',range(ks))});
+  makePdf('Semana '+ks[0]+' a '+ks[6],L)}
+function pdfMonth(){const ks=monthKeys(mon),L=ks.filter(k=>tot(k).i||tot(k).e).map(k=>pl(shortD(parse(k)),tot(k)));
+  L.push('',{b:pl('Total del mes',range(ks))});makePdf('Mes '+mon,L)}
+function backup(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(S)],{type:'application/json'}));a.download='caja-respaldo-'+todayKey()+'.json';document.body.appendChild(a);a.click();a.remove()}
+function restore(e){const f=e.target.files[0];if(!f)return;const r=new FileReader();
+  r.onload=()=>{try{const j=JSON.parse(r.result);if(j&&j.days){S=j;Object.keys(S.days).forEach(saveDay);render()}else alert('Archivo no válido.')}catch(x){alert('Archivo no válido.')}};r.readAsText(f)}
+
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{tab=b.dataset.t;render()});
+render();setInterval(tick,30000);
+if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+</script></body></html>
